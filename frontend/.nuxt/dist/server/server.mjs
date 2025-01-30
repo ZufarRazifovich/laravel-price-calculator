@@ -1,0 +1,1 @@
+export { default } from "file:///Users/mac/Desktop/agro/laravel-price-calculator/frontend/node_modules/@nuxt/vite-builder/dist/runtime/vite-node.mjs"
