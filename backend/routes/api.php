@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\PriceCalculatorController;
+use App\Http\Controllers\CountryController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -17,3 +18,4 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/calculate', [PriceCalculatorController::class, 'calculate']);
 Route::get('/products', [PriceCalculatorController::class, 'index']);
+Route::get('/countries', [CountryController::class, 'index']);
