@@ -1,71 +1,195 @@
 <script setup>
-import { ref, computed } from "vue";
+import { ref, onMounted, watch } from "vue";
 
-const products = [
-  { name: "Наушники", price: 100 },
-  { name: "Чехол для телефона", price: 20 }
-];
+const products = ref([]);
+const countries = ref([]);
 
-const countries = [
-  { code: "DE", name: "Германия", tax: 0.19 },
-  { code: "IT", name: "Италия", tax: 0.22 },
-  { code: "GR", name: "Греция", tax: 0.24 }
-];
+const selectedProduct = ref(null);
+const selectedCountry = ref(null);
+const taxNumber = ref("");
 
-const selectedProduct = ref(products[0]);
-const selectedCountry = ref(countries[0]);
+const result = ref(null);
+const error = ref(null);
+const pending = ref(false);
+const isTaxNumberValid = ref(true);
 
-const taxNumber = computed(() => `${selectedCountry.value.code}123456789`);
-
-const { data, pending, execute } = useFetch("/api/calculate", {
-  method: "POST",
-  immediate: false,
-  body: computed(() => ({
-    price: selectedProduct.value.price,
-    country: selectedCountry.value.code,
-    taxNumber: taxNumber.value
-  }))
+onMounted(async () => {
+  await loadProducts();
+  await loadCountries();
+  selectedProduct.value = products.value.length > 0 ? products.value[0] : null;
+  selectedCountry.value = countries.value.length > 0 ? countries.value[0] : null;
 });
 
+const loadProducts = async () => {
+  try {
+    const response = await fetch("http://localhost:81/api/products");
+    if (response.ok) {
+      const data = await response.json();
+      products.value = data.data;
+    } else {
+      const errorData = await response.json();
+      error.value = errorData.error || "Failed to load products";
+    }
+  } catch (err) {
+    error.value = "Network error or server is down";
+  }
+};
+
+const loadCountries = async () => {
+  try {
+    const response = await fetch("http://localhost:81/api/countries");
+    if (response.ok) {
+      const data = await response.json();
+      countries.value = data.data;
+    } else {
+      const errorData = await response.json();
+      error.value = errorData.error || "Failed to load countries";
+    }
+  } catch (err) {
+    error.value = "Network error or server is down";
+  }
+};
+
+watch(selectedCountry, (newCountry) => {
+  if (newCountry) {
+    taxNumber.value = newCountry.code;
+  } else {
+    taxNumber.value = "";
+  }
+});
+
+const handleTaxNumberInput = (event) => {
+  const inputValue = event.target.value;
+  const selectedCountryCode = selectedCountry.value ? selectedCountry.value.code : "";
+
+  let maxNumericLength;
+  if (selectedCountryCode === 'IT') {
+    maxNumericLength = 11;
+  } else {
+    maxNumericLength = 9;
+  }
+
+  const numericValue = inputValue.slice(selectedCountryCode.length).replace(/\D/g, "");
+  const truncatedValue = numericValue.slice(0, maxNumericLength);
+
+  taxNumber.value = selectedCountryCode + truncatedValue;
+  isTaxNumberValid.value = true;
+};
+
 const calculatePrice = async () => {
-  await execute();
+    if (!taxNumber.value || taxNumber.value.length < (selectedCountry.value ? (selectedCountry.value.code === 'IT' ? 13 : 11) : 0)) {
+        isTaxNumberValid.value = false;
+        return;
+    }
+
+    isTaxNumberValid.value = true;
+    pending.value = true;
+    error.value = null;
+    result.value = null;
+
+    try {
+        const response = await fetch("http://localhost:81/api/calculate", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
+            body: JSON.stringify({
+                product_id: selectedProduct.value.id,
+                tax_number: taxNumber.value,
+            }),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            result.value = data.data;
+        } else {
+            const errorData = await response.json();
+            error.value = errorData.message || "An error occurred during calculation";
+        }
+    } catch (err) {
+        error.value = "Network error or server is down";
+    } finally {
+        pending.value = false;
+    }
 };
 </script>
 
 <template>
   <div class="flex items-center justify-center h-screen bg-gray-100">
     <div class="bg-white p-6 rounded-lg shadow-md w-96">
-      <h1 class="text-xl font-bold text-center mb-4">Калькулятор стоимости продукта</h1>
+      <h1 class="text-xl font-bold text-center mb-4">
+        Калькулятор стоимости продукта
+      </h1>
 
       <form @submit.prevent="calculatePrice" class="space-y-4">
         <label class="block">
           <span class="text-gray-700">Выберите продукт:</span>
-          <select v-model="selectedProduct" class="block w-full mt-1 p-2 border rounded">
-            <option v-for="product in products" :key="product.name" :value="product">
-              {{ product.name }} - {{ product.price }}€
+          <select
+            v-model="selectedProduct"
+            class="block w-full mt-1 p-2 border rounded"
+          >
+            <option
+              v-for="product in products"
+              :key="product.id"
+              :value="product"
+            >
+              {{ product.name }} - {{ product.price }} €
             </option>
           </select>
         </label>
 
         <label class="block">
           <span class="text-gray-700">Выберите страну:</span>
-          <select v-model="selectedCountry" class="block w-full mt-1 p-2 border rounded">
-            <option v-for="country in countries" :key="country.code" :value="country">
+          <select
+            v-model="selectedCountry"
+            class="block w-full mt-1 p-2 border rounded"
+          >
+            <option
+              v-for="country in countries"
+              :key="country.code"
+              :value="country"
+            >
               {{ country.name }}
             </option>
           </select>
         </label>
 
-        <p class="text-gray-600 text-sm">Ваш налоговый номер: <strong>{{ taxNumber }}</strong></p>
+        <label class="block">
+          <span class="text-gray-700">Введите tax номер:</span>
+          <input
+            type="text"
+            :value="taxNumber"
+            @input="handleTaxNumberInput"
+            :placeholder="`Например ${selectedCountry ? selectedCountry.code : 'XX'}123456789`"
+            class="block w-full mt-1 p-2 border rounded"
+          />
+          <div v-if="!isTaxNumberValid" class="mt-2 text-sm text-red-600">
+            Пожалуйста, введите корректный TAX номер (9 цыфор).
+          </div>
+        </label>
 
-        <button type="submit" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600" :disabled="pending">
+        <button
+          type="submit"
+          class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+          :disabled="pending || !isTaxNumberValid"
+        >
           {{ pending ? "Расчет..." : "Рассчитать" }}
         </button>
       </form>
 
-      <p v-if="data" class="mt-4 text-center text-lg font-semibold">
-        Итоговая стоимость: {{ data.price }}€
-      </p>
+      <div v-if="result" class="mt-4">
+        <h2 class="text-lg font-semibold">Результат:</h2>
+        <p>Продукт: {{ result.product_name }}</p>
+        <p>Страна: {{ result.country_code }}</p>
+        <p>Налоговая ставка: {{ result.tax_rate }}%</p>
+        <p>Цена без налога: {{ result.price_without_tax }} €</p>
+        <p>Сумма налога: {{ result.tax_amount }} €</p>
+        <p>Итоговая цена: {{ result.total_price }} €</p>
+      </div>
+      <div v-if="error" class="mt-4 text-red-500">
+        <p>Ошибка: {{ error }}</p>
+      </div>
     </div>
   </div>
 </template>
